@@ -23,6 +23,7 @@ by [@MrMoneys_ofc](https://t.me/MrMoneys_ofc)
 - [How It Works / Como Funciona](#how-it-works)
 - [Server Side / Lado Servidor](#server-side)
 - [Java Side / Lado Java](#java-side)
+  - [Loading Native Libraries / Carregando as Libs Nativas](#loading-native-libraries--carregando-as-libs-nativas)
 - [Native Side / Lado Nativo](#native-side)
 - [Admin Panel / Painel Admin](#admin-panel)
 - [API Reference](#api-reference)
@@ -73,6 +74,8 @@ O **VLDS** é um sistema de validação de licenças em 2 etapas para mod menus 
 │                    VLDS FLOW                        │
 ├─────────────────────────────────────────────────────┤
 │                                                     │
+│  [Java] static block → System.loadLibrary()         │
+│       ↓                                             │
 │  [Java] Anti-checks (root / emulator / GG)          │
 │       ↓                                             │
 │  [Java] POST → server (key + device info)           │
@@ -116,25 +119,28 @@ O **VLDS** é um sistema de validação de licenças em 2 etapas para mod menus 
 
 ### 🇧🇷 Português
 
-**1. Java roda os anti-checks**  
-Antes de qualquer coisa, o app verifica se o ambiente é seguro.
+**1. Java carrega as libs nativas**  
+O bloco `static` executa `System.loadLibrary()` assim que a classe é carregada — antes de qualquer outra coisa.
 
-**2. Java envia o POST**  
+**2. Java roda os anti-checks**  
+Antes de qualquer request, o app verifica se o ambiente é seguro.
+
+**3. Java envia o POST**  
 O app envia a key e identificador do dispositivo para o servidor.
 
-**3. Servidor valida a cadeia completa**  
+**4. Servidor valida a cadeia completa**  
 Verifica blacklist → key → dispositivo → expiração → gera token HMAC.
 
-**4. Token HMAC rotativo**  
+**5. Token HMAC rotativo**  
 O servidor gera um token que muda a cada hora. Dois tokens são retornados — hora atual e hora anterior — para evitar falhas na virada da hora.
 
-**5. Java passa para a nativa**  
+**6. Java passa para a nativa**  
 O Java extrai os campos do JSON e passa para um método nativo com nome ofuscado.
 
-**6. C++ faz a validação final**  
+**7. C++ faz a validação final**  
 A nativa separa os campos, valida o formato e só então seta `g_keyOk = true`.
 
-**7. `g_keyOk` é o guardião**  
+**8. `g_keyOk` é o guardião**  
 `CheckOverlayPermission` tem `if (!g_keyOk) return;` no topo — sem validação, nada abre.
 
 </td>
@@ -142,25 +148,28 @@ A nativa separa os campos, valida o formato e só então seta `g_keyOk = true`.
 
 ### 🇺🇸 English
 
-**1. Java runs anti-checks**  
-Before anything, the app checks if the environment is safe.
+**1. Java loads the native libs**  
+The `static` block runs `System.loadLibrary()` as soon as the class is loaded — before anything else.
 
-**2. Java sends the POST**  
+**2. Java runs anti-checks**  
+Before any request, the app checks if the environment is safe.
+
+**3. Java sends the POST**  
 The app sends the key and device identifier to the server.
 
-**3. Server validates the full chain**  
+**4. Server validates the full chain**  
 Checks blacklist → key → device → expiration → generates HMAC token.
 
-**4. Rotating HMAC token**  
+**5. Rotating HMAC token**  
 The server generates a token that changes every hour. Two tokens are returned — current and previous hour — to avoid failures at hour boundaries.
 
-**5. Java passes to native**  
+**6. Java passes to native**  
 Java extracts the JSON fields and passes them to a native method with an obfuscated name.
 
-**6. C++ does the final validation**  
+**7. C++ does the final validation**  
 The native splits the fields, validates the format, and only then sets `g_keyOk = true`.
 
-**7. `g_keyOk` is the guardian**  
+**8. `g_keyOk` is the guardian**  
 `CheckOverlayPermission` has `if (!g_keyOk) return;` at the top — without validation, nothing opens.
 
 </td>
@@ -290,9 +299,9 @@ echo json_encode([
 
 O Java tem **3 responsabilidades** — nada mais:
 
-1. Rodar os anti-checks antes do request
-2. Enviar o POST e receber o JSON
-3. Passar os tokens para a nativa
+1. Carregar as libs nativas no bloco `static`
+2. Rodar os anti-checks antes do request
+3. Enviar o POST, receber o JSON e passar os tokens para a nativa
 
 ```java
 // Declare o método nativo — escolha seu próprio nome
@@ -323,9 +332,9 @@ Essa decisão é 100% da nativa.
 
 Java has **3 responsibilities** — nothing more:
 
-1. Run anti-checks before the request
-2. Send the POST and receive the JSON
-3. Pass the tokens to native
+1. Load native libs in the `static` block
+2. Run anti-checks before the request
+3. Send the POST, receive the JSON, and pass tokens to native
 
 ```java
 // Declare native method — choose your own name
@@ -348,6 +357,114 @@ yourMethod(info);
 
 **Java does not decide if the menu opens.**  
 That decision is 100% native.
+
+</td>
+</tr>
+</table>
+
+---
+
+### Loading Native Libraries / Carregando as Libs Nativas
+
+> ⚠️ **Esta é uma adição ao seu `Main.java` existente — não uma substituição.**  
+> ⚠️ **This is an addition to your existing `Main.java` — not a replacement.**
+
+<table>
+<tr>
+<td width="50%">
+
+### 🇧🇷 Português
+
+O VLDS depende de métodos nativos C++ — e **nenhum deles funciona se as libs não forem carregadas primeiro**.
+
+Adicione um bloco `static` no topo da sua classe `Main` (ou equivalente) para carregar as libs do seu mod menu. Esse bloco executa automaticamente quando a classe é carregada pelo Android, antes de qualquer método ser chamado.
+
+**Como adicionar no seu `Main.java`:**
+
+```java
+public class Main extends Activity { // sua classe existente
+
+    // ─── ADICIONE ESTE BLOCO ────────────────────────────
+    static {
+        // Substitua pelo nome real da sua lib (.so)
+        // Sem "lib" no começo e sem ".so" no final
+        System.loadLibrary("seumenu");
+    }
+    // ────────────────────────────────────────────────────
+
+    // Declare o método nativo — escolha seu próprio nome
+    private static native void seuMetodo(String token);
+
+    // ... resto do seu código existente
+}
+```
+
+**Se o seu projeto tiver múltiplas libs**, carregue na ordem de dependência — a lib que é dependência vem primeiro:
+
+```java
+static {
+    System.loadLibrary("utils");   // dependência — carrega primeiro
+    System.loadLibrary("seumenu"); // depende de utils — carrega depois
+}
+```
+
+> ℹ️ O nome passado para `loadLibrary` é o nome do arquivo `.so` sem o prefixo `lib` e sem a extensão. Ex: `libseumenu.so` → `"seumenu"`.
+
+**Erros comuns:**
+
+| Erro | Causa |
+|------|-------|
+| `UnsatisfiedLinkError` | Lib não foi carregada ou nome errado |
+| `java.lang.UnsatisfiedLinkError: no seumenu in java.library.path` | Nome incorreto no `loadLibrary` |
+| Crash silencioso na chamada nativa | `loadLibrary` ausente ou na ordem errada |
+
+</td>
+<td width="50%">
+
+### 🇺🇸 English
+
+VLDS depends on C++ native methods — and **none of them work if the libs aren't loaded first**.
+
+Add a `static` block at the top of your `Main` class (or equivalent) to load your mod menu's libs. This block executes automatically when the class is loaded by Android, before any method is called.
+
+**How to add to your `Main.java`:**
+
+```java
+public class Main extends Activity { // your existing class
+
+    // ─── ADD THIS BLOCK ─────────────────────────────────
+    static {
+        // Replace with your actual lib name (.so)
+        // No "lib" prefix and no ".so" extension
+        System.loadLibrary("yourmenu");
+    }
+    // ────────────────────────────────────────────────────
+
+    // Declare native method — choose your own name
+    private static native void yourMethod(String token);
+
+    // ... rest of your existing code
+}
+```
+
+**If your project has multiple libs**, load them in dependency order — the dependency lib comes first:
+
+```java
+static {
+    System.loadLibrary("utils");    // dependency — loads first
+    System.loadLibrary("yourmenu"); // depends on utils — loads after
+}
+```
+
+> ℹ️ The name passed to `loadLibrary` is the `.so` filename without the `lib` prefix and without the extension. Ex: `libyourmenu.so` → `"yourmenu"`.
+
+**Common errors:**
+
+| Error | Cause |
+|-------|-------|
+| `UnsatisfiedLinkError` | Lib not loaded or wrong name |
+| `java.lang.UnsatisfiedLinkError: no yourmenu in java.library.path` | Wrong name in `loadLibrary` |
+| Silent crash on native call | `loadLibrary` missing or wrong order |
 
 </td>
 </tr>
@@ -411,9 +528,6 @@ void CheckOverlayPermission(...) {
 **Registro no JNI — obrigatório:**
 
 ```cpp
-// O JNI_OnLoad registra os métodos nativos.
-// Sem isso, o Java não consegue chamar a nativa.
-
 extern "C" JNIEXPORT jint JNICALL
 JNI_OnLoad(JavaVM *vm, void *reserved) {
     JNIEnv *env;
@@ -489,9 +603,6 @@ void CheckOverlayPermission(...) {
 **JNI Registration — required:**
 
 ```cpp
-// JNI_OnLoad registers native methods.
-// Without this, Java cannot call native methods.
-
 extern "C" JNIEXPORT jint JNICALL
 JNI_OnLoad(JavaVM *vm, void *reserved) {
     JNIEnv *env;
@@ -641,6 +752,50 @@ const char* expected = "sua_string";
 
 ---
 
+**🔒 Ofuscação de Strings via XOR (C++)**
+
+Se a sua base não tem AY_OBFUSCATE, você pode implementar uma ofuscação simples por XOR. A string fica cifrada no binário e só é decodificada em tempo de execução — invisível para ferramentas como `strings` ou IDA.
+
+```cpp
+// Utilitário XOR — adicione no seu header ou .cpp
+#include <string>
+
+static std::string xorDecrypt(const char* data, size_t len, uint8_t key) {
+    std::string result(data, len);
+    for (size_t i = 0; i < len; i++)
+        result[i] ^= key;
+    return result;
+}
+
+// Exemplo de uso no método de validação:
+// String "valid" cifrada com XOR 0x5A: {0x2C,0x3B,0x36,0x37,0x3E}
+// (gere os bytes com um script Python antes de compilar)
+static void seuMetodo(JNIEnv* env, jclass, jstring jtoken) {
+    // Bytes da string "valid" cifrada com XOR 0x5A
+    const char enc[] = {0x2C, 0x3B, 0x36, 0x37, 0x3E};
+    std::string expected = xorDecrypt(enc, sizeof(enc), 0x5A);
+
+    // ... resto da validação
+    if (info == expected && validTk)
+        g_keyOk = true;
+}
+```
+
+**Como gerar os bytes cifrados (Python):**
+
+```python
+# Rode isso uma vez para gerar os bytes da sua string
+key = 0x5A
+text = "sua_string_valida"
+enc = [hex(ord(c) ^ key) for c in text]
+print(", ".join(enc))
+# Saída: 0x2c, 0x3b, ... → copie para o C++
+```
+
+> ⚠️ Use uma chave XOR diferente da usada em outros lugares do seu projeto. Combine com OBFUSCATE se disponível.
+
+---
+
 **🔒 Nomes de métodos ofuscados**
 
 Use nomes difíceis de identificar para o método nativo. Caracteres ambíguos funcionam muito bem:
@@ -693,6 +848,50 @@ const char* expected = "your_string";
 ```
 
 > Not mandatory — it's an extra protection layer.
+
+---
+
+**🔒 XOR String Obfuscation (C++)**
+
+If your base doesn't have AY_OBFUSCATE, you can implement simple XOR obfuscation. The string is stored encrypted in the binary and only decoded at runtime — invisible to tools like `strings` or IDA.
+
+```cpp
+// XOR utility — add to your header or .cpp
+#include <string>
+
+static std::string xorDecrypt(const char* data, size_t len, uint8_t key) {
+    std::string result(data, len);
+    for (size_t i = 0; i < len; i++)
+        result[i] ^= key;
+    return result;
+}
+
+// Example usage in the validation method:
+// String "valid" encrypted with XOR 0x5A: {0x2C,0x3B,0x36,0x37,0x3E}
+// (generate bytes with a Python script before compiling)
+static void yourMethod(JNIEnv* env, jclass, jstring jtoken) {
+    // Bytes of string "valid" encrypted with XOR 0x5A
+    const char enc[] = {0x2C, 0x3B, 0x36, 0x37, 0x3E};
+    std::string expected = xorDecrypt(enc, sizeof(enc), 0x5A);
+
+    // ... rest of validation
+    if (info == expected && validTk)
+        g_keyOk = true;
+}
+```
+
+**How to generate the encrypted bytes (Python):**
+
+```python
+# Run this once to generate bytes for your string
+key = 0x5A
+text = "your_valid_string"
+enc = [hex(ord(c) ^ key) for c in text]
+print(", ".join(enc))
+# Output: 0x2c, 0x3b, ... → copy to C++
+```
+
+> ⚠️ Use a XOR key different from others used in your project. Combine with OBFUSCATE if available.
 
 ---
 
@@ -776,6 +975,34 @@ Sim! Sem o `JNI_OnLoad` registrando os métodos, o Java não consegue encontrar 
 <summary><b>🇺🇸 Is JNI_OnLoad required?</b></summary>
 
 Yes! Without `JNI_OnLoad` registering the methods, Java cannot find the native function and the call fails silently. Make sure to register **all** your native methods there.
+
+</details>
+
+<details>
+<summary><b>🇧🇷 O System.loadLibrary precisa estar no Main.java?</b></summary>
+
+Não necessariamente no `Main.java` — o importante é que esteja em um bloco `static` na classe que declara os métodos nativos, antes de qualquer chamada nativa. Na maioria dos projetos de mod menu, isso fica no `Main.java`, mas siga a estrutura do seu projeto.
+
+</details>
+
+<details>
+<summary><b>🇺🇸 Does System.loadLibrary need to be in Main.java?</b></summary>
+
+Not necessarily in `Main.java` — what matters is that it's in a `static` block in the class that declares the native methods, before any native call. In most mod menu projects this lives in `Main.java`, but follow your project's structure.
+
+</details>
+
+<details>
+<summary><b>🇧🇷 O XOR é suficiente para proteger strings?</b></summary>
+
+XOR é uma camada leve — não é criptografia forte. Um reverser experiente pode identificar o padrão. O valor real está em combinar XOR com AY_OBFUSCATE, dex2c e ProGuard. Quanto mais camadas, mais difícil e desmotivante fica o processo de reversão.
+
+</details>
+
+<details>
+<summary><b>🇺🇸 Is XOR enough to protect strings?</b></summary>
+
+XOR is a lightweight layer — not strong cryptography. An experienced reverser can identify the pattern. The real value is in combining XOR with AY_OBFUSCATE, dex2c, and ProGuard. The more layers, the harder and more discouraging the reversing process becomes.
 
 </details>
 
